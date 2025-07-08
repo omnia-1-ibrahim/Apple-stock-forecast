@@ -2,7 +2,7 @@ streamlit
 yfinance
 pandas
 numpy
-prophet
-keras
+fbprophet
 scikit-learn
 matplotlib
+keras
