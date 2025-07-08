@@ -6,7 +6,8 @@ from sklearn.metrics import mean_squared_error
 import matplotlib.pyplot as plt
 
 # Prophet
-from prophet import Prophet
+from fbprophet import Prophet
+
 
 # LSTM
 from keras.models import Sequential
