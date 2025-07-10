@@ -3,29 +3,21 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
-import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-
-# استبدال Prophet بـ SARIMAX
 from statsmodels.tsa.statespace.sarimax import SARIMAX
-
-# LSTM
 from keras.models import Sequential
 from keras.layers import LSTM, Dense, Dropout
 from sklearn.preprocessing import MinMaxScaler
 
-# ----------------------------------------
-# تحميل بيانات Apple
 @st.cache_data
 def load_data():
     end_date = datetime.now()
-    start_date = end_date - timedelta(days=6*365)  # 6 سنوات من البيانات
+    start_date = end_date - timedelta(days=6*365)
     df = yf.download("AAPL", start=start_date, end=end_date)
     df.reset_index(inplace=True)
     return df[['Date', 'Close']]
 
-# إعداد الصفحة
 st.set_page_config(
     page_title="📈 Apple Stock Price Prediction",
     page_icon="📈",
@@ -35,127 +27,47 @@ st.set_page_config(
 st.title("📈 Apple Stock Price Prediction")
 st.write("هذا التطبيق يستخدم SARIMA و LSTM للتنبؤ بسعر سهم Apple")
 
-# تحميل البيانات
 df = load_data()
 
-# اختيار الموديل
 col1, col2 = st.columns(2)
 with col1:
     model_choice = st.selectbox("اختر الموديل", ["SARIMA", "LSTM"])
 with col2:
     n_days = st.slider("عدد الأيام المستقبلية للتنبؤ", 30, 180, 60)
 
-# ----------------------------------------
-# SARIMA Model (بديل لـ Prophet)
 if model_choice == "SARIMA":
     st.subheader("تنبؤ SARIMA")
-    
-    # تحضير البيانات
     df_sarima = df.copy()
     df_sarima.set_index('Date', inplace=True)
-    
-    # تقسيم البيانات
     train_size = int(len(df_sarima) * 0.8)
     train = df_sarima.iloc[:train_size]
     test = df_sarima.iloc[train_size:]
-    
-    # بناء وتدريب النموذج
     with st.spinner('جاري تدريب نموذج SARIMA...'):
-        model = SARIMAX(train['Close'], 
-                        order=(1, 1, 1),
+        model = SARIMAX(train['Close'], order=(1, 1, 1),
                         seasonal_order=(1, 1, 1, 12),
                         enforce_stationarity=False,
                         enforce_invertibility=False)
         model_fit = model.fit(disp=False)
-    
-    # التنبؤ
     forecast_steps = len(test) + n_days
     forecast_result = model_fit.get_forecast(steps=forecast_steps)
     forecast = forecast_result.predicted_mean
     conf_int = forecast_result.conf_int()
-    
-    # حساب دقة النموذج
     test_forecast = forecast[:len(test)]
     test_actual = test['Close']
     rmse = np.sqrt(mean_squared_error(test_actual, test_forecast))
     mape = mean_absolute_percentage_error(test_actual, test_forecast) * 100
-    
-    # عرض النتائج
     st.write(f"📊 **RMSE**: {rmse:.2f}")
     st.write(f"📊 **MAPE**: {mape:.2f}%")
-    
-    # رسم بياني تفاعلي
     fig = go.Figure()
-    
-    # البيانات الفعلية للتدريب
-    fig.add_trace(go.Scatter(
-        x=train.index,
-        y=train['Close'],
-        mode='lines',
-        name='تدريب',
-        line=dict(color='blue')
-    ))
-    
-    # البيانات الفعلية للاختبار
-    fig.add_trace(go.Scatter(
-        x=test.index,
-        y=test['Close'],
-        mode='lines',
-        name='اختبار',
-        line=dict(color='green')
-    ))
-    
-    # التنبؤ
-    fig.add_trace(go.Scatter(
-        x=forecast.index,
-        y=forecast,
-        mode='lines',
-        name='تنبؤ',
-        line=dict(color='red', dash='dash')
-    ))
-    
-    # مناطق الثقة
-    fig.add_trace(go.Scatter(
-        x=forecast.index,
-        y=conf_int.iloc[:, 0],
-        fill=None,
-        mode='lines',
-        line=dict(width=0),
-        showlegend=False
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=forecast.index,
-        y=conf_int.iloc[:, 1],
-        fill='tonexty',
-        mode='lines',
-        name='نطاق الثقة 95%',
-        line=dict(width=0),
-        fillcolor='rgba(255, 0, 0, 0.2)'
-    ))
-    
-    # خط فاصل بين التاريخ والتنبؤ المستقبلي
+    fig.add_trace(go.Scatter(x=train.index, y=train['Close'], mode='lines', name='تدريب', line=dict(color='blue')))
+    fig.add_trace(go.Scatter(x=test.index, y=test['Close'], mode='lines', name='اختبار', line=dict(color='green')))
+    fig.add_trace(go.Scatter(x=forecast.index, y=forecast, mode='lines', name='تنبؤ', line=dict(color='red', dash='dash')))
+    fig.add_trace(go.Scatter(x=forecast.index, y=conf_int.iloc[:, 0], fill=None, mode='lines', line=dict(width=0), showlegend=False))
+    fig.add_trace(go.Scatter(x=forecast.index, y=conf_int.iloc[:, 1], fill='tonexty', mode='lines', name='نطاق الثقة 95%', line=dict(width=0), fillcolor='rgba(255, 0, 0, 0.2)'))
     last_train_date = test.index[-1]
-    fig.add_vline(
-        x=last_train_date,
-        line_dash="dash",
-        line_color="orange",
-        annotation_text="بداية التنبؤ المستقبلي",
-        annotation_position="top left"
-    )
-    
-    fig.update_layout(
-        title="تنبؤ أسعار سهم Apple باستخدام SARIMA",
-        xaxis_title="التاريخ",
-        yaxis_title="السعر ($)",
-        legend_title="المفتاح",
-        hovermode="x unified",
-        height=600
-    )
-    
+    fig.add_vline(x=last_train_date, line_dash="dash", line_color="orange", annotation_text="بداية التنبؤ", annotation_position="top left")
+    fig.update_layout(title="تنبؤ أسعار سهم Apple باستخدام SARIMA", xaxis_title="التاريخ", yaxis_title="السعر ($)", legend_title="المفتاح", hovermode="x unified", height=600)
     st.plotly_chart(fig, use_container_width=True)
-    
-    # عرض جدول التنبؤات
     st.subheader("التنبؤات المستقبلية")
     forecast_df = pd.DataFrame({
         'التاريخ': forecast.index[-n_days:],
@@ -163,23 +75,13 @@ if model_choice == "SARIMA":
         'الحد الأدنى': conf_int.iloc[-n_days:, 0].values,
         'الحد الأعلى': conf_int.iloc[-n_days:, 1].values
     })
-    st.dataframe(forecast_df.style.format({
-        'السعر المتوقع': '{:.2f}',
-        'الحد الأدنى': '{:.2f}',
-        'الحد الأعلى': '{:.2f}'
-    }))
+    st.dataframe(forecast_df.style.format({'السعر المتوقع': '{:.2f}', 'الحد الأدنى': '{:.2f}', 'الحد الأعلى': '{:.2f}'}))
 
-# ----------------------------------------
-# LSTM Model
 elif model_choice == "LSTM":
     st.subheader("تنبؤ LSTM")
-    
-    # تحضير البيانات
     data = df[['Close']].values
     scaler = MinMaxScaler()
     scaled_data = scaler.fit_transform(data)
-    
-    # إنشاء متواليات زمنية
     sequence_length = 60
     X, y = [], []
     for i in range(sequence_length, len(scaled_data)):
@@ -187,13 +89,9 @@ elif model_choice == "LSTM":
         y.append(scaled_data[i, 0])
     X, y = np.array(X), np.array(y)
     X = X.reshape((X.shape[0], X.shape[1], 1))
-    
-    # تقسيم البيانات
     train_size = int(len(X) * 0.8)
     X_train, X_test = X[:train_size], X[train_size:]
     y_train, y_test = y[:train_size], y[train_size:]
-    
-    # بناء الموديل
     with st.spinner('جاري تدريب نموذج LSTM...'):
         model = Sequential()
         model.add(LSTM(50, return_sequences=True, input_shape=(X_train.shape[1], 1)))
@@ -203,76 +101,25 @@ elif model_choice == "LSTM":
         model.add(Dense(25))
         model.add(Dense(1))
         model.compile(optimizer='adam', loss='mean_squared_error')
-        history = model.fit(X_train, y_train, 
-                          epochs=50, 
-                          batch_size=32, 
-                          validation_data=(X_test, y_test),
-                          verbose=0)
-    
-    # توقع على بيانات الاختبار
+        history = model.fit(X_train, y_train, epochs=50, batch_size=32, validation_data=(X_test, y_test), verbose=0)
     predicted = model.predict(X_test)
     predicted = scaler.inverse_transform(predicted)
     actual = scaler.inverse_transform(y_test.reshape(-1, 1))
     rmse = np.sqrt(mean_squared_error(actual, predicted))
     mape = mean_absolute_percentage_error(actual, predicted) * 100
-    
-    # عرض النتائج
     st.write(f"📊 **RMSE**: {rmse:.2f}")
     st.write(f"📊 **MAPE**: {mape:.2f}%")
-    
-    # رسم بياني تفاعلي
     fig = go.Figure()
-    
-    # البيانات الفعلية
-    fig.add_trace(go.Scatter(
-        x=df['Date'].iloc[train_size+sequence_length:train_size+sequence_length+len(actual)],
-        y=actual.flatten(),
-        mode='lines',
-        name='سعر فعلي',
-        line=dict(color='blue'))
-    ))
-    
-    # التنبؤ
-    fig.add_trace(go.Scatter(
-        x=df['Date'].iloc[train_size+sequence_length:train_size+sequence_length+len(actual)],
-        y=predicted.flatten(),
-        mode='lines',
-        name='تنبؤ LSTM',
-        line=dict(color='red', dash='dash'))
-    ))
-    
-    fig.update_layout(
-        title="تنبؤ أسعار سهم Apple باستخدام LSTM",
-        xaxis_title="التاريخ",
-        yaxis_title="السعر ($)",
-        legend_title="المفتاح",
-        hovermode="x unified",
-        height=500
-    )
-    
+    fig.add_trace(go.Scatter(x=df['Date'].iloc[train_size+sequence_length:train_size+sequence_length+len(actual)], y=actual.flatten(), mode='lines', name='سعر فعلي', line=dict(color='blue')))
+    fig.add_trace(go.Scatter(x=df['Date'].iloc[train_size+sequence_length:train_size+sequence_length+len(actual)], y=predicted.flatten(), mode='lines', name='تنبؤ LSTM', line=dict(color='red', dash='dash')))
+    fig.update_layout(title="تنبؤ أسعار سهم Apple باستخدام LSTM", xaxis_title="التاريخ", yaxis_title="السعر ($)", legend_title="المفتاح", hovermode="x unified", height=500)
     st.plotly_chart(fig, use_container_width=True)
-    
-    # رسم فقدان التدريب والتحقق
     fig_loss = go.Figure()
-    fig_loss.add_trace(go.Scatter(
-        y=history.history['loss'],
-        mode='lines',
-        name='فقدان التدريب'
-    ))
-    fig_loss.add_trace(go.Scatter(
-        y=history.history['val_loss'],
-        mode='lines',
-        name='فقدان التحقق'
-    ))
-    fig_loss.update_layout(
-        title='فقدان النموذج أثناء التدريب',
-        xaxis_title='العصر',
-        yaxis_title='فقدان',
-        height=400
-    )
+    fig_loss.add_trace(go.Scatter(y=history.history['loss'], mode='lines', name='فقدان التدريب'))
+    fig_loss.add_trace(go.Scatter(y=history.history['val_loss'], mode='lines', name='فقدان التحقق'))
+    fig_loss.update_layout(title='فقدان النموذج أثناء التدريب', xaxis_title='العصر', yaxis_title='فقدان', height=400)
     st.plotly_chart(fig_loss, use_container_width=True)
 
-# تذييل الصفحة
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center;">
